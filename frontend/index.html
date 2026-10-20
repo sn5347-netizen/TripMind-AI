@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TripMind AI | Multi-Agent Autonomous Travel Planner</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS for Interactive Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eef6ff',
+              100: '#d9eaff',
+              500: '#1e60f2',
+              600: '#144bd8',
+              700: '#0f38af',
+              900: '#0b2468'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    #map { height: 420px; border-radius: 1rem; z-index: 10; }
+    .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(12px); }
+    .pulse-dot {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    @media print {
+      header, form, #agentVisualizer, #apiKeyModal, button { display: none !important; }
+      #results { display: block !important; }
+      #map { height: 280px; }
+      body { background: white; color: black; }
+    }
+  </style>
+</head>
+
+<body class="bg-slate-50 text-slate-900 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- Top Navigation Header -->
+  <header class="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-brand-500/30">
+          <span class="text-xl">✈️</span>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-xl font-extrabold tracking-tight">TripMind <span class="text-brand-500">AI</span></h1>
+            <span class="px-2 py-0.5 text-xs font-semibold bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded-full">Multi-Agent v2.0</span>
+          </div>
+          <p class="text-xs text-slate-400">Autonomous Multi-Agent Travel Orchestration & Dynamic Replanning</p>
+        </div>
+      </div>
+
+      <div class="flex items-center space-x-3">
+        <button id="apiKeyBtn" type="button" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center gap-1.5">
+          <span>🔑</span> <span id="keyStatusText">Gemini API Key</span>
+        </button>
+        <button id="quickPdfBtn" type="button" class="text-xs bg-brand-600 hover:bg-brand-500 text-white px-3.5 py-1.5 rounded-lg font-medium shadow-sm transition flex items-center gap-1.5 hidden" onclick="window.print()">
+          <span>📄</span> Export PDF
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
+    
+    <!-- Hero / Intro -->
+    <div class="mb-8 text-center max-w-2xl mx-auto">
+      <h2 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+        Intelligent Travel, Planned by Specialized Agents.
+      </h2>
+      <p class="mt-2 text-slate-600 text-sm sm:text-base">
+        Coordinated AI agents research authentic attractions, audit live weather forecasts, balance your budget, and continuously optimize your itinerary.
+      </p>
+    </div>
+
+    <!-- Planning Form Card -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 sm:p-8 mb-8">
+      <form id="tripForm">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          
+          <!-- Destination Input -->
+          <div class="lg:col-span-2">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2" for="destination">
+              Target Destination
+            </label>
+            <input 
+              id="destination" 
+              type="text"
+              placeholder="e.g. Kerala, India or Tokyo, Japan" 
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
+              required 
+              value="Goa, India"
+            />
+            <!-- Quick Chips -->
+            <div class="flex flex-wrap gap-1.5 mt-2.5">
+              <span class="text-xs text-slate-400 self-center mr-1">Popular:</span>
+              <button type="button" class="quick-dest text-xs bg-slate-100 hover:bg-brand-50 text-slate-600 hover:text-brand-600 px-2.5 py-1 rounded-full border border-slate-200 transition" data-dest="Kerala, India">Kerala</button>
+              <button type="button" class="quick-dest text-xs bg-slate-100 hover:bg-brand-50 text-slate-600 hover:text-brand-600 px-2.5 py-1 rounded-full border border-slate-200 transition" data-dest="Goa, India">Goa</button>
+              <button type="button" class="quick-dest text-xs bg-slate-100 hover:bg-brand-50 text-slate-600 hover:text-brand-600 px-2.5 py-1 rounded-full border border-slate-200 transition" data-dest="Tokyo, Japan">Tokyo</button>
+              <button type="button" class="quick-dest text-xs bg-slate-100 hover:bg-brand-50 text-slate-600 hover:text-brand-600 px-2.5 py-1 rounded-full border border-slate-200 transition" data-dest="Paris, France">Paris</button>
+              <button type="button" class="quick-dest text-xs bg-slate-100 hover:bg-brand-50 text-slate-600 hover:text-brand-600 px-2.5 py-1 rounded-full border border-slate-200 transition" data-dest="Manali, Himachal Pradesh">Manali</button>
+            </div>
+          </div>
+
+          <!-- Start Date -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2" for="startDate">
+              Travel Start Date 📅
+            </label>
+            <input 
+              id="startDate" 
+              type="date" 
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 transition" 
+              required
+            />
+            <span class="text-xs text-slate-400 mt-1 block">Determines live weather & traffic</span>
+          </div>
+
+          <!-- Duration & End Date -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2" for="days">
+              Duration / End Date
+            </label>
+            <div class="relative">
+              <input 
+                id="days" 
+                type="number" 
+                min="1" 
+                max="14" 
+                value="3" 
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 transition" 
+                required
+              />
+              <span class="absolute right-4 top-3.5 text-xs text-slate-400 font-semibold pointer-events-none">Days</span>
+            </div>
+            <span id="endDateBadge" class="text-xs text-brand-600 font-medium mt-1 block">End: Calculating...</span>
+          </div>
+
+          <!-- Total Budget -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2" for="budget">
+              Total Budget (₹)
+            </label>
+            <input 
+              id="budget" 
+              type="number" 
+              min="1000" 
+              step="500" 
+              value="25000" 
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 transition" 
+              required
+            />
+            <span id="perPersonEstimate" class="text-xs text-slate-500 mt-1 block">Est. ₹12,500 / person</span>
+          </div>
+
+          <!-- Travelers -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2" for="travelers">
+              Number of Travelers
+            </label>
+            <input 
+              id="travelers" 
+              type="number" 
+              min="1" 
+              max="20" 
+              value="2" 
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 transition" 
+              required
+            />
+          </div>
+
+          <!-- Travel Pace -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2" for="travelPace">
+              Travel Pacing
+            </label>
+            <select id="travelPace" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 transition">
+              <option value="moderate" selected>Moderate (2-3 stops/day)</option>
+              <option value="relaxed">Relaxed (1-2 stops/day)</option>
+              <option value="fast-paced">Fast-Paced (Packed highlights)</option>
+            </select>
+          </div>
+
+          <!-- Trip Style / Party -->
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2" for="tripType">
+              Travel Group Dynamic
+            </label>
+            <select id="tripType" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 transition">
+              <option value="friends_or_solo" selected>Friends / Solo Adventurer</option>
+              <option value="couple">Couple / Romantic Getaway</option>
+              <option value="family">Family with Kids / Seniors</option>
+              <option value="business_leisure">Workation / Bleisure</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Interest Tags -->
+        <div class="mt-6 pt-6 border-t border-slate-100">
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-3">
+            Travel Interests & Style (Choose at least one)
+          </label>
+          <div class="flex flex-wrap gap-2.5" id="interestsContainer">
+            <label class="cursor-pointer select-none">
+              <input type="checkbox" value="nature" class="hidden peer" checked>
+              <span class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 peer-checked:bg-emerald-600 peer-checked:text-white transition">
+                🌿 Nature & Scenic
+              </span>
+            </label>
+            <label class="cursor-pointer select-none">
+              <input type="checkbox" value="food" class="hidden peer" checked>
+              <span class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 peer-checked:bg-amber-600 peer-checked:text-white transition">
+                🍜 Local Food & Culinary
+              </span>
+            </label>
+            <label class="cursor-pointer select-none">
+              <input type="checkbox" value="culture" class="hidden peer" checked>
+              <span class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 peer-checked:bg-indigo-600 peer-checked:text-white transition">
+                🏛️ Culture & Heritage
+              </span>
+            </label>
+            <label class="cursor-pointer select-none">
+              <input type="checkbox" value="adventure" class="hidden peer">
+              <span class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 peer-checked:bg-rose-600 peer-checked:text-white transition">
+                🧗 Adventure & Thrill
+              </span>
+            </label>
+            <label class="cursor-pointer select-none">
+              <input type="checkbox" value="shopping" class="hidden peer">
+              <span class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 peer-checked:bg-purple-600 peer-checked:text-white transition">
+                🛍️ Bazaars & Shopping
+              </span>
+            </label>
+            <label class="cursor-pointer select-none">
+              <input type="checkbox" value="relaxation" class="hidden peer">
+              <span class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 peer-checked:bg-sky-600 peer-checked:text-white transition">
+                🧘 Wellness & Relaxation
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Submit & Status -->
+        <div class="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <button 
+            id="submitBtn" 
+            type="submit" 
+            class="w-full sm:w-auto px-8 py-4 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-xl shadow-lg shadow-brand-500/25 transition-all transform active:scale-95 flex items-center justify-center gap-2"
+          >
+            <span id="btnIcon">⚡</span>
+            <span id="btnText">Launch Multi-Agent Planner</span>
+          </button>
+          
+          <div id="statusAlert" class="text-xs text-slate-500 font-medium flex items-center gap-2 hidden">
+            <span class="inline-block w-2 h-2 rounded-full bg-brand-500 pulse-dot"></span>
+            <span id="statusMessage">Specialist agents collaborating...</span>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <!-- LIVE MULTI-AGENT EXECUTION MONITOR (Recruiter & Demo Feature) -->
+    <section id="agentVisualizer" class="bg-slate-900 text-white rounded-2xl p-6 sm:p-7 mb-8 shadow-xl hidden">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-800">
+        <div>
+          <div class="flex items-center space-x-2">
+            <h3 class="text-base font-bold text-slate-100">Multi-Agent Collaboration Mesh</h3>
+            <span class="px-2 py-0.5 text-[11px] font-mono bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded">LIVE PIPELINE</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">Real-time inter-agent message passing and synthesis telemetry</p>
+        </div>
+        <div id="aiEngineBadge" class="text-xs font-mono bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700">
+          Engine: Gemini 2.5 Flash
+        </div>
+      </div>
+
+      <!-- Agent Flow Diagram Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div class="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl text-center flex flex-col items-center">
+          <span class="text-xl mb-1">🤖</span>
+          <span class="text-xs font-bold text-slate-200">Orchestrator</span>
+          <span class="text-[10px] text-emerald-400 mt-1">● Pipeline Ready</span>
+        </div>
+        <div class="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl text-center flex flex-col items-center">
+          <span class="text-xl mb-1">🌦️</span>
+          <span class="text-xs font-bold text-slate-200">Weather & Geo</span>
+          <span class="text-[10px] text-emerald-400 mt-1">● Open-Meteo Synced</span>
+        </div>
+        <div class="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl text-center flex flex-col items-center">
+          <span class="text-xl mb-1">🔍</span>
+          <span class="text-xs font-bold text-slate-200">Destination</span>
+          <span class="text-[10px] text-emerald-400 mt-1">● POIs Discovered</span>
+        </div>
+        <div class="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl text-center flex flex-col items-center">
+          <span class="text-xl mb-1">🗺️</span>
+          <span class="text-xs font-bold text-slate-200">Itinerary</span>
+          <span class="text-[10px] text-emerald-400 mt-1">● Spatial Clustered</span>
+        </div>
+        <div class="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl text-center flex flex-col items-center">
+          <span class="text-xl mb-1">💰</span>
+          <span class="text-xs font-bold text-slate-200">Budget Guard</span>
+          <span class="text-[10px] text-emerald-400 mt-1">● Tiers Audited</span>
+        </div>
+        <div class="bg-slate-800/80 border border-slate-700/60 p-3 rounded-xl text-center flex flex-col items-center">
+          <span class="text-xl mb-1">🛡️</span>
+          <span class="text-xs font-bold text-slate-200">Critic Agent</span>
+          <span class="text-[10px] text-emerald-400 mt-1">● Verified 100%</span>
+        </div>
+      </div>
+
+      <!-- Agent Thought Stream Accordion -->
+      <details class="group bg-slate-950/70 border border-slate-800 rounded-xl overflow-hidden">
+        <summary class="px-4 py-3 cursor-pointer text-xs font-mono text-slate-400 hover:text-slate-200 flex items-center justify-between transition">
+          <span class="flex items-center gap-2">
+            <span>⚡ View Agent Thought Stream & Execution Traces</span>
+            <span id="traceCountBadge" class="bg-slate-800 text-slate-300 text-[10px] px-2 py-0.5 rounded">0 events</span>
+          </span>
+          <span class="text-xs group-open:rotate-180 transition-transform">▼</span>
+        </summary>
+        <div id="tracesLogContainer" class="p-4 space-y-2.5 max-h-64 overflow-y-auto font-mono text-xs border-t border-slate-800/70">
+          <!-- Dynamically populated traces -->
+        </div>
+      </details>
+    </section>
+
+    <!-- RESULTS SECTION -->
+    <section id="results" class="space-y-8 hidden">
+      
+      <!-- Trip Header & Metrics Banner -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 p-6 sm:p-8 shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-100">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 text-xs font-bold bg-brand-50 text-brand-600 rounded-full">CONFIRMED TRIP PLAN</span>
+              <span id="validationScorePill" class="px-2.5 py-0.5 text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full">Feasibility: 98/100</span>
+            </div>
+            <h2 id="tripHeading" class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-2">Goa, India</h2>
+            <p id="tripSubtitle" class="text-sm text-slate-500 mt-1">3 Days · 2 Travelers · Balanced Pacing</p>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="window.print()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition flex items-center gap-1.5">
+              <span>🖨️</span> Print / Save PDF
+            </button>
+            <button id="sharePlanBtn" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl transition flex items-center gap-1.5">
+              <span>🔗</span> Share Plan
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+            <span class="text-xs text-slate-500 font-medium">Total Budget</span>
+            <div id="metricTotalBudget" class="text-xl font-extrabold text-slate-900 mt-1">₹25,000</div>
+            <span class="text-[11px] text-slate-400">Target Ceiling</span>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+            <span class="text-xs text-slate-500 font-medium">Estimated Expense</span>
+            <div id="metricEstimatedSpent" class="text-xl font-extrabold text-brand-600 mt-1">₹23,400</div>
+            <span id="metricOverrunTag" class="text-[11px] text-emerald-600 font-semibold">✓ Within Budget</span>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+            <span class="text-xs text-slate-500 font-medium">Per-Person Cost</span>
+            <div id="metricPerPerson" class="text-xl font-extrabold text-slate-900 mt-1">₹11,700</div>
+            <span class="text-[11px] text-slate-400">All-Inclusive Est.</span>
+          </div>
+          <div class="bg-slate-50 rounded-xl p-4 border border-slate-100">
+            <span class="text-xs text-slate-500 font-medium">Verified Attractions</span>
+            <div id="metricPoiCount" class="text-xl font-extrabold text-indigo-600 mt-1">9 Places</div>
+            <span class="text-[11px] text-slate-400">Geocoded & Verified</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE MAP & LIVE WEATHER ROW -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Interactive Leaflet Map (2 Cols) -->
+        <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-2">
+              <span class="text-base font-bold text-slate-900">🗺️ Geo-Spatial Destination Route</span>
+              <span class="text-xs text-slate-500">(Pins color-coded by day)</span>
+            </div>
+            <div class="text-xs text-slate-500 flex items-center gap-2">
+              <span class="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Day 1
+              <span class="inline-block w-2.5 h-2.5 rounded-full bg-indigo-500"></span> Day 2
+              <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-500"></span> Day 3+
+            </div>
+          </div>
+          
+          <div id="map"></div>
+          <p class="text-xs text-slate-400 mt-2 text-center">Click on any pin to view attraction operational hours, estimated cost, and direct navigation links.</p>
+        </div>
+
+        <!-- Live Meteorological Forecast Card (1 Col) -->
+        <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm flex flex-col">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-bold text-slate-900">🌦️ Meteorological Forecast</h3>
+            <span class="text-[11px] bg-sky-50 text-sky-700 px-2 py-0.5 rounded font-mono">Open-Meteo</span>
+          </div>
+
+          <div id="weatherForecastList" class="space-y-3 flex-1">
+            <!-- Dynamically populated weather cards -->
+          </div>
+
+          <div class="mt-4 pt-4 border-t border-slate-100 text-[11px] text-slate-500">
+            <strong>Adaptive Engine:</strong> Outdoor schedules automatically adjust or issue advisories if precipitation chance exceeds 50%.
+          </div>
+        </div>
+      </div>
+
+      <!-- DAY-BY-DAY ITINERARY WITH DYNAMIC RE-PLANNING -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 p-6 sm:p-8 shadow-sm">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-slate-100">
+          <div>
+            <h3 class="text-xl font-extrabold text-slate-900">Day-by-Day Schedule</h3>
+            <p class="text-xs text-slate-500">Surgically replan or regenerate individual days without losing the rest of your trip.</p>
+          </div>
+          <div class="text-xs font-semibold bg-brand-50 text-brand-700 px-3 py-1 rounded-lg">
+            ⚡ Dynamic Re-planner Active
+          </div>
+        </div>
+
+        <div id="itineraryContainer" class="space-y-6">
+          <!-- Dynamic Day Cards -->
+        </div>
+      </div>
+
+      <!-- INTELLIGENT BUDGET OPTIMIZATION & 3-TIER COMPARISON -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 p-6 sm:p-8 shadow-sm">
+        <div class="mb-6 pb-4 border-b border-slate-100">
+          <h3 class="text-xl font-extrabold text-slate-900">💰 Intelligent Budget Optimization & Tiers</h3>
+          <p class="text-xs text-slate-500">Audited against local lodging, meals, and transit averages.</p>
+        </div>
+
+        <!-- Allocations Progress Grid -->
+        <div class="mb-8">
+          <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Planned Expense Allocation</h4>
+          <div id="allocationBreakdown" class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- 3 Tier Comparison Cards -->
+        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Comparative Travel Tiers</h4>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="tierComparisonCards">
+          <!-- Populated via JS -->
+        </div>
+
+        <!-- Agent Cost Savings Recommendations -->
+        <div class="mt-6 p-4 rounded-xl bg-amber-50/80 border border-amber-200/70">
+          <h4 class="text-xs font-bold text-amber-900 flex items-center gap-1.5 mb-2">
+            <span>💡</span> Agent Cost-Optimization Recommendations
+          </h4>
+          <ul id="costRecommendationsList" class="text-xs text-amber-800 space-y-1 list-disc list-inside">
+            <!-- Populated via JS -->
+          </ul>
+        </div>
+      </div>
+
+      <!-- CRITIC & AUDIT SANITY REPORT -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-sm">
+        <h3 class="text-base font-bold text-slate-900 mb-2">🛡️ Critic & Verification Agent Audit</h3>
+        <p class="text-xs text-slate-500 mb-4">Every generated plan passes through rigorous feasibility checks before presentation.</p>
+        
+        <div id="validationChecksList" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <!-- Populated via JS -->
+        </div>
+
+        <div class="mt-4 p-3 bg-slate-50 rounded-xl text-[11px] text-slate-600 border border-slate-200/60" id="validationNotice">
+          <!-- Notice string -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- GEMINI API KEY MODAL -->
+  <div id="apiKeyModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in duration-200">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <span>🔑</span> Google Gemini API Key
+        </h3>
+        <button id="closeModalBtn" class="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
+      </div>
+
+      <div class="mt-4 text-xs text-slate-600 space-y-2">
+        <p>TripMind AI features dual-mode execution:</p>
+        <ul class="list-disc list-inside space-y-1 text-slate-500">
+          <li><strong>Autonomous Heuristic Simulation</strong>: Default, works 100% offline with zero keys.</li>
+          <li><strong>Gemini 2.5 Flash</strong>: Enables deep generative reasoning and live POI synthesis.</li>
+        </ul>
+        <div class="pt-2">
+          <label class="block font-bold text-slate-700 mb-1" for="modalApiKeyInput">Enter Gemini API Key:</label>
+          <input 
+            type="password" 
+            id="modalApiKeyInput" 
+            placeholder="AIzaSy..." 
+            class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+          />
+        </div>
+      </div>
+
+      <div class="mt-6 flex justify-end gap-2">
+        <button id="clearKeyBtn" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition">
+          Clear Key
+        </button>
+        <button id="saveKeyBtn" class="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl transition">
+          Save Key
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500 mt-auto">
+    <div class="max-w-7xl mx-auto px-4">
+      <p class="font-medium text-slate-700">TripMind AI — Multi-Agent Portfolio Project</p>
+      <p class="mt-1">Architected with FastAPI, Google Gemini 2.5, Open-Meteo Live APIs & Leaflet.js</p>
+    </div>
+  </footer>
+
+  <!-- Main JavaScript Application Logic -->
+  <script>
+    // State management
+    let currentTripData = null;
+    let leafletMap = null;
+    let mapMarkers = [];
+    let mapPolylines = [];
+
+    // Currency Formatter
+    const formatCurrency = (val) => new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 0
+    }).format(val || 0);
+
+    // Day Color Palette for Map Pins
+    const DAY_COLORS = ['#10b981', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#f97316'];
+
+    // DOM Elements
+    const form = document.getElementById("tripForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const btnText = document.getElementById("btnText");
+    const statusAlert = document.getElementById("statusAlert");
+    const statusMessage = document.getElementById("statusMessage");
+    const results = document.getElementById("results");
+    const agentVisualizer = document.getElementById("agentVisualizer");
+    const quickPdfBtn = document.getElementById("quickPdfBtn");
+
+    // Travel Date & Duration Synchronization
+    const startDateInput = document.getElementById("startDate");
+    const daysInput = document.getElementById("days");
+    const endDateBadge = document.getElementById("endDateBadge");
+
+    const updateEndDateDisplay = () => {
+      if (!startDateInput || !startDateInput.value) return;
+      const start = new Date(startDateInput.value + 'T00:00:00');
+      const duration = parseInt(daysInput.value) || 1;
+      const end = new Date(start);
+      end.setDate(end.getDate() + duration - 1);
+      const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
+      if (endDateBadge) {
+        endDateBadge.textContent = `Returns: ${end.toLocaleDateString('en-US', options)}`;
+      }
+    };
+
+    const initDefaultDates = () => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const yyyy = tomorrow.getFullYear();
+      const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+      const dd = String(tomorrow.getDate()).padStart(2, '0');
+      if (startDateInput) {
+        startDateInput.value = `${yyyy}-${mm}-${dd}`;
+        startDateInput.min = new Date().toISOString().split('T')[0];
+      }
+      updateEndDateDisplay();
+    };
+
+    if (startDateInput) startDateInput.addEventListener("change", updateEndDateDisplay);
+    if (daysInput) daysInput.addEventListener("input", updateEndDateDisplay);
+    initDefaultDates();
+
+    // Dynamic per-person calculation in form
+    const updatePerPersonHint = () => {
+      const budgetVal = parseFloat(document.getElementById("budget").value) || 0;
+      const travelersVal = parseInt(document.getElementById("travelers").value) || 1;
+      const perP = travelersVal > 0 ? budgetVal / travelersVal : budgetVal;
+      document.getElementById("perPersonEstimate").textContent = `Est. ${formatCurrency(perP)} / person`;
+    };
+    document.getElementById("budget").addEventListener("input", updatePerPersonHint);
+    document.getElementById("travelers").addEventListener("input", updatePerPersonHint);
+
+    // Quick destination chips
+    document.querySelectorAll(".quick-dest").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.getElementById("destination").value = btn.dataset.dest;
+      });
+    });
+
+    // API Key Modal Handling
+    const apiKeyModal = document.getElementById("apiKeyModal");
+    const apiKeyBtn = document.getElementById("apiKeyBtn");
+    const closeModalBtn = document.getElementById("closeModalBtn");
+    const saveKeyBtn = document.getElementById("saveKeyBtn");
+    const clearKeyBtn = document.getElementById("clearKeyBtn");
+    const modalApiKeyInput = document.getElementById("modalApiKeyInput");
+    const keyStatusText = document.getElementById("keyStatusText");
+
+    const syncKeyUI = () => {
+      const savedKey = localStorage.getItem("tripmind_gemini_key");
+      if (savedKey) {
+        keyStatusText.textContent = "Gemini Key: Active";
+        modalApiKeyInput.value = savedKey;
+      } else {
+        keyStatusText.textContent = "Gemini Key: Optional";
+        modalApiKeyInput.value = "";
+      }
+    };
+    syncKeyUI();
+
+    apiKeyBtn.addEventListener("click", () => apiKeyModal.classList.remove("hidden"));
+    closeModalBtn.addEventListener("click", () => apiKeyModal.classList.add("hidden"));
+    saveKeyBtn.addEventListener("click", () => {
+      const key = modalApiKeyInput.value.trim();
+      if (key) {
+        localStorage.setItem("tripmind_gemini_key", key);
+      } else {
+        localStorage.removeItem("tripmind_gemini_key");
+      }
+      syncKeyUI();
+      apiKeyModal.classList.add("hidden");
+    });
+    clearKeyBtn.addEventListener("click", () => {
+      localStorage.removeItem("tripmind_gemini_key");
+      modalApiKeyInput.value = "";
+      syncKeyUI();
+      apiKeyModal.classList.add("hidden");
+    });
+
+    // Share plan link
+    document.getElementById("sharePlanBtn").addEventListener("click", () => {
+      navigator.clipboard.writeText(window.location.href);
+      alert("Trip URL link copied to clipboard!");
+    });
+
+    // Initialize or Reset Leaflet Map
+    function initMap(centerLat, centerLng) {
+      if (!leafletMap) {
+        leafletMap = L.map('map').setView([centerLat, centerLng], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(leafletMap);
+      } else {
+        leafletMap.setView([centerLat, centerLng], 12);
+        // Clear existing markers & polylines
+        mapMarkers.forEach(m => leafletMap.removeLayer(m));
+        mapPolylines.forEach(p => leafletMap.removeLayer(p));
+        mapMarkers = [];
+        mapPolylines = [];
+      }
+    }
+
+    // Render Markers & Polylines onto Map
+    function renderMapWaypoints(itinerary) {
+      if (!leafletMap) return;
+
+      const allLatLngs = [];
+
+      itinerary.forEach((day, dayIndex) => {
+        const color = DAY_COLORS[dayIndex % DAY_COLORS.length];
+        const dayCoords = [];
+
+        day.activities.forEach((act) => {
+          if (act.latitude && act.longitude) {
+            const latLng = [act.latitude, act.longitude];
+            dayCoords.push(latLng);
+            allLatLngs.push(latLng);
+
+            // Custom SVG Pin
+            const markerIcon = L.divIcon({
+              className: 'custom-pin',
+              html: `<div style="background-color: ${color}; width: 26px; height: 26px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 11px;">D${day.day}</div>`,
+              iconSize: [26, 26],
+              iconAnchor: [13, 13]
+            });
+
+            const marker = L.marker(latLng, { icon: markerIcon }).addTo(leafletMap);
+            marker.bindPopup(`
+              <div style="font-family: inherit; font-size: 12px; max-width: 200px;">
+                <div style="font-weight: bold; color: #0f172a; margin-bottom: 2px;">${act.name}</div>
+                <div style="color: #64748b; font-size: 11px; margin-bottom: 4px;">Day ${day.day} · ${act.time_slot.toUpperCase()}</div>
+                <div style="color: #334155; margin-bottom: 6px;">${act.description.substring(0, 90)}...</div>
+                <div style="display: flex; justify-content: space-between; font-weight: 600; color: #1e60f2; border-top: 1px solid #f1f5f9; padding-top: 4px;">
+                  <span>Ticket: ₹${act.estimated_cost}</span>
+                  <a href="${act.booking_link || '#'}" target="_blank" style="color: #1e60f2; text-decoration: underline;">Maps →</a>
+                </div>
+              </div>
+            `);
+            mapMarkers.push(marker);
+          }
+        });
+
+        // Draw Polyline connecting the day's stops
+        if (dayCoords.length > 1) {
+          const polyline = L.polyline(dayCoords, {
+            color: color,
+            weight: 3,
+            opacity: 0.7,
+            dashArray: '6, 6'
+          }).addTo(leafletMap);
+          mapPolylines.push(polyline);
+        }
+      });
+
+      if (allLatLngs.length > 0) {
+        leafletMap.fitBounds(L.latLngBounds(allLatLngs), { padding: [40, 40] });
+      }
+    }
+
+    // Surgical Single Day Replanning Trigger
+    async function triggerReplanDay(dayNum) {
+      if (!currentTripData) return;
+
+      const dayCard = document.getElementById(`dayCard-${dayNum}`);
+      const replanBtn = document.getElementById(`replanBtn-${dayNum}`);
+      
+      replanBtn.disabled = true;
+      replanBtn.textContent = "⚡ Re-optimizing...";
+
+      const targetDayObj = currentTripData.itinerary.find(d => d.day === dayNum);
+      const userKey = localStorage.getItem("tripmind_gemini_key") || undefined;
+      const payload = {
+        destination: currentTripData.destination,
+        day: dayNum,
+        total_days: currentTripData.days,
+        interests: Array.from(document.querySelectorAll('#interestsContainer input:checked')).map(i => i.value),
+        date: targetDayObj ? targetDayObj.date : undefined,
+        api_key: userKey
+      };
+
+      try {
+        const response = await fetch("/api/replan-day", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) throw new Error("Failed to re-optimize day");
+
+        const updatedDay = await response.json();
+        
+        // Update in currentTripData
+        const dayIdx = currentTripData.itinerary.findIndex(d => d.day === dayNum);
+        if (dayIdx !== -1) {
+          currentTripData.itinerary[dayIdx] = updatedDay;
+        }
+
+        // Re-render Day Card
+        renderSingleDayCard(updatedDay, dayIdx);
+        // Refresh map markers
+        renderMapWaypoints(currentTripData.itinerary);
+
+      } catch (err) {
+        alert("Could not re-plan day: " + err.message);
+      } finally {
+        replanBtn.disabled = false;
+        replanBtn.textContent = "⚡ Re-optimize Day";
+      }
+    }
+
+    // Render an individual Day Card
+    function renderSingleDayCard(day, idx) {
+      let card = document.getElementById(`dayCard-${day.day}`);
+      if (!card) {
+        card = document.createElement("div");
+        card.id = `dayCard-${day.day}`;
+        card.className = "border border-slate-200/90 rounded-2xl p-5 sm:p-6 bg-slate-50/50 hover:bg-slate-50 transition";
+      }
+
+      const weatherIcon = day.weather && day.weather.condition.includes("Rain") ? "🌧️" : "☀️";
+      const weatherText = day.weather ? `${weatherIcon} ${day.weather.condition} (${day.weather.max_temp_c}°C)` : "☀️ Clear";
+      const dateHeader = day.date ? `${day.day_of_week || ''}, ${day.date}` : `Day ${day.day}`;
+      const trafficBadge = day.traffic_level ? `<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">🚦 ${day.traffic_level}</span>` : '';
+
+      card.innerHTML = `
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200">
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-brand-600 text-white">Day ${day.day}</span>
+              <span class="text-xs font-semibold text-slate-700">${dateHeader}</span>
+              <span class="text-xs text-slate-500 font-medium">· ${weatherText}</span>
+              ${trafficBadge}
+            </div>
+            <h4 class="text-lg font-bold text-slate-900 mt-1">${day.title}</h4>
+            <p class="text-xs text-slate-500 mt-0.5">${day.summary}</p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-slate-600 bg-white border border-slate-200 px-3 py-1.5 rounded-xl">
+              Day Est: ₹${day.estimated_day_cost}
+            </span>
+            <button 
+              id="replanBtn-${day.day}" 
+              onclick="triggerReplanDay(${day.day})" 
+              class="text-xs bg-slate-200 hover:bg-brand-50 hover:text-brand-700 text-slate-700 px-3 py-1.5 rounded-xl font-semibold transition"
+              title="Regenerate this specific day without touching the rest of your trip"
+            >
+              ⚡ Re-optimize Day
+            </button>
+          </div>
+        </div>
+
+        <!-- Activities Timeline -->
+        <div class="mt-5 space-y-4">
+          ${day.activities.map((act, actIdx) => {
+            const slotBadgeColor = act.time_slot === 'morning' ? 'bg-amber-100 text-amber-800' : act.time_slot === 'afternoon' ? 'bg-sky-100 text-sky-800' : 'bg-indigo-100 text-indigo-800';
+            const transitConnector = act.travel_time_from_previous_min ? `
+              <div class="flex items-center gap-2 px-3 py-1.5 my-1 rounded-xl bg-slate-100 border border-slate-200/60 text-[11px] text-slate-600 font-medium">
+                <span>🚗</span>
+                <span>Transit leg: <strong>~${act.travel_time_from_previous_min} mins</strong> (${act.distance_from_previous_km} km)</span>
+                <span class="text-slate-400">·</span>
+                <span class="text-amber-800 font-medium">${day.traffic_level || 'Normal flow'}</span>
+              </div>
+            ` : '';
+
+            return `
+              ${transitConnector}
+              <div class="flex items-start gap-4 p-4 rounded-xl bg-white border border-slate-200/80 shadow-sm">
+                <span class="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider ${slotBadgeColor}">
+                  ${act.time_slot}
+                </span>
+
+                <div class="flex-1">
+                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <h5 class="text-sm font-bold text-slate-900">${act.name}</h5>
+                    <span class="text-xs font-semibold text-slate-600">Est. ₹${act.estimated_cost} · ~${act.duration_hours}h</span>
+                  </div>
+
+                  <p class="text-xs text-slate-600 mt-1 leading-relaxed">${act.description}</p>
+
+                  <div class="flex flex-wrap items-center gap-3 mt-2.5 text-[11px] text-slate-500">
+                    <span>🕒 ${act.opening_hours || '09:00 - 18:00'}</span>
+                    <span>${act.indoor ? '🏛️ Indoor Venue' : '🌿 Open Air'}</span>
+                    <span class="text-emerald-700 font-medium">${act.weather_tag || 'Good for all weather'}</span>
+                    ${act.booking_link ? `<a href="${act.booking_link}" target="_blank" class="text-brand-600 hover:underline font-semibold ml-auto">Directions & Booking →</a>` : ''}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-500 gap-2">
+          <span>🚦 <strong>Traffic & Transit Note:</strong> ${day.traffic_summary || day.transit_tips}</span>
+          <span class="font-mono text-slate-600 text-[11px] whitespace-nowrap">🚗 ~${day.estimated_travel_time_min || 40}m transit (${day.estimated_travel_distance_km || 8} km)</span>
+        </div>
+      `;
+
+      return card;
+    }
+
+    // FORM SUBMISSION PIPELINE
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const interests = Array.from(
+        document.querySelectorAll('#interestsContainer input:checked')
+      ).map(cb => cb.value);
+
+      if (interests.length === 0) {
+        alert("Please select at least one travel interest.");
+        return;
+      }
+
+      const destination = document.getElementById("destination").value.trim();
+      const startDate = document.getElementById("startDate") ? document.getElementById("startDate").value : undefined;
+      const days = parseInt(document.getElementById("days").value);
+      const budget = parseFloat(document.getElementById("budget").value);
+      const travelers = parseInt(document.getElementById("travelers").value);
+      const travelPace = document.getElementById("travelPace").value;
+      const tripType = document.getElementById("tripType").value;
+      const userKey = localStorage.getItem("tripmind_gemini_key") || undefined;
+
+      const payload = {
+        destination,
+        days,
+        budget,
+        travelers,
+        interests,
+        start_date: startDate,
+        travel_pace: travelPace,
+        trip_type: tripType,
+        api_key: userKey
+      };
+
+      // UI Loading State
+      submitBtn.disabled = true;
+      btnText.textContent = "Synthesizing Multi-Agent Plan...";
+      statusAlert.classList.remove("hidden");
+      statusMessage.textContent = "Orchestrator activating specialized agents...";
+      results.classList.add("hidden");
+      agentVisualizer.classList.remove("hidden");
+      quickPdfBtn.classList.add("hidden");
+
+      try {
+        const response = await fetch("/api/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || "Unable to generate plan.");
+        }
+
+        currentTripData = data;
+
+        // Render AI Engine Badge
+        document.getElementById("aiEngineBadge").textContent = `Engine: ${data.ai_engine}`;
+
+        // Populate Agent Execution Traces
+        const traceCountBadge = document.getElementById("traceCountBadge");
+        const tracesLogContainer = document.getElementById("tracesLogContainer");
+        traceCountBadge.textContent = `${data.agent_traces.length} steps`;
+        tracesLogContainer.innerHTML = data.agent_traces.map(t => {
+          const badgeClass = t.status === 'completed' ? 'text-emerald-400' : t.status === 'in_progress' ? 'text-sky-400' : 'text-amber-400';
+          return `
+            <div class="flex items-start gap-2 py-1 border-b border-slate-900">
+              <span class="text-slate-500">[${t.timestamp}]</span>
+              <span class="font-bold text-slate-300 min-w-[150px]">${t.agent_name}:</span>
+              <span class="${badgeClass}">[${t.status.toUpperCase()}]</span>
+              <span class="text-slate-400 flex-1">${t.details}</span>
+            </div>
+          `;
+        }).join('');
+
+        // Populate Trip Header & Metrics
+        document.getElementById("tripHeading").textContent = `${data.destination} · ${data.days} Days`;
+        document.getElementById("tripSubtitle").textContent = data.destination_summary;
+        document.getElementById("validationScorePill").textContent = `Feasibility Score: ${data.validation.score}/100`;
+
+        document.getElementById("metricTotalBudget").textContent = formatCurrency(data.budget.total_budget);
+        document.getElementById("metricEstimatedSpent").textContent = formatCurrency(data.budget.estimated_total_spent);
+        document.getElementById("metricPerPerson").textContent = formatCurrency(data.budget.budget_per_person);
+        
+        const totalPois = data.itinerary.reduce((acc, d) => acc + d.activities.length, 0);
+        document.getElementById("metricPoiCount").textContent = `${totalPois} Activities`;
+
+        const overrunTag = document.getElementById("metricOverrunTag");
+        if (data.budget.status === 'within_budget') {
+          overrunTag.textContent = "✓ Within Budget";
+          overrunTag.className = "text-[11px] text-emerald-600 font-semibold";
+        } else {
+          overrunTag.textContent = `⚠️ Overrun: +${formatCurrency(data.budget.overrun_amount)}`;
+          overrunTag.className = "text-[11px] text-rose-600 font-semibold";
+        }
+
+        // Initialize Map & Render Markers
+        initMap(data.coordinates.lat, data.coordinates.lng);
+        renderMapWaypoints(data.itinerary);
+
+        // Populate Weather Forecast Cards
+        const weatherList = document.getElementById("weatherForecastList");
+        weatherList.innerHTML = data.itinerary.map(day => {
+          if (!day.weather) return '';
+          const isRain = day.weather.condition.includes("Rain");
+          const icon = isRain ? "🌧️" : "☀️";
+          const dateLabel = day.date ? `${day.day_of_week}, ${day.date}` : `Day ${day.day}`;
+          return `
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col gap-2 text-xs">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                  <span class="text-xl">${icon}</span>
+                  <div>
+                    <div class="font-bold text-slate-800">Day ${day.day} · ${dateLabel}</div>
+                    <div class="text-[11px] text-slate-500">${day.weather.condition} · ${day.weather.advisory}</div>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="font-extrabold text-slate-900">${day.weather.max_temp_c}°C</span>
+                  <span class="block text-[10px] text-slate-400">Rain: ${day.weather.precipitation_probability}%</span>
+                </div>
+              </div>
+              <div class="flex items-center justify-between pt-1.5 border-t border-slate-200/60 text-[11px]">
+                <span class="text-amber-800 font-medium">🚦 ${day.weather.traffic_level || 'Normal flow'}</span>
+                <span class="text-slate-500 font-mono">🚗 ~${day.estimated_travel_time_min || 40}m transit (${day.estimated_travel_distance_km || 8} km)</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Populate Day-by-Day Cards
+        const itineraryContainer = document.getElementById("itineraryContainer");
+        itineraryContainer.innerHTML = '';
+        data.itinerary.forEach((day, idx) => {
+          const card = renderSingleDayCard(day, idx);
+          itineraryContainer.appendChild(card);
+        });
+
+        // Populate Budget Allocations
+        const allocationBox = document.getElementById("allocationBreakdown");
+        allocationBox.innerHTML = Object.entries(data.budget.allocation).map(([k, v]) => `
+          <div class="bg-slate-50 p-3 rounded-xl border border-slate-200/70">
+            <span class="text-[11px] text-slate-500 uppercase font-semibold">${k}</span>
+            <div class="text-sm font-extrabold text-slate-900 mt-0.5">${formatCurrency(v)}</div>
+          </div>
+        `).join('');
+
+        // Populate 3-Tier Comparisons
+        const tierCards = document.getElementById("tierComparisonCards");
+        tierCards.innerHTML = Object.entries(data.budget.tier_comparison).map(([tierKey, tier]) => `
+          <div class="p-5 rounded-2xl border ${tierKey === 'balanced' ? 'border-brand-500 bg-brand-50/20' : 'border-slate-200 bg-white'} shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold uppercase tracking-wider text-slate-500">${tierKey}</span>
+              ${tierKey === 'balanced' ? '<span class="px-2 py-0.5 text-[10px] bg-brand-600 text-white font-bold rounded-full">RECOMMENDED</span>' : ''}
+            </div>
+            <h5 class="text-sm font-bold text-slate-900 mb-1">${tier.label}</h5>
+            <div class="text-xl font-extrabold text-slate-900 mt-2">${formatCurrency(tier.estimated_total)}</div>
+            <p class="text-xs text-slate-500 mt-2 leading-relaxed">${tier.style}</p>
+            <div class="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1">
+              <div>Stay/Night: <strong>${formatCurrency(tier.stay_per_night)}</strong></div>
+              <div>Food/Day: <strong>${formatCurrency(tier.daily_food)}</strong></div>
+            </div>
+          </div>
+        `).join('');
+
+        // Populate Cost Recommendations
+        const recList = document.getElementById("costRecommendationsList");
+        recList.innerHTML = data.budget.cost_saving_recommendations.map(r => `<li>${r}</li>`).join('');
+
+        // Populate Validation Checks
+        const checksList = document.getElementById("validationChecksList");
+        checksList.innerHTML = data.validation.checks.map(c => `
+          <div class="flex items-center gap-2 p-2 rounded-lg bg-emerald-50 text-emerald-800">
+            <span>✓</span> <span>${c}</span>
+          </div>
+        `).join('');
+
+        document.getElementById("validationNotice").textContent = data.validation.notices[0] || '';
+
+        // Display results & smooth scroll
+        results.classList.remove("hidden");
+        quickPdfBtn.classList.remove("hidden");
+        results.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      } catch (err) {
+        alert("TripMind AI encountered an error: " + err.message);
+      } finally {
+        submitBtn.disabled = false;
+        btnText.textContent = "Launch Multi-Agent Planner";
+        statusAlert.classList.add("hidden");
+      }
+    });
+  </script>
+</body>
+</html>
